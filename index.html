@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1216">
+<title>Світлоблоки</title>
+<script src="https://telegram.org/js/games.js" defer></script>
+<style>
+  :root {
+    --bg: #0f1216;
+    --panel: #171b21;
+    --line: #262d36;
+    --text: #e6e9ee;
+    --muted: #8a94a3;
+    --lamp: #f2c14e;
+    --btn: #1f252d;
+    --btn-active: #2b333d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    padding: max(8px, env(safe-area-inset-top)) 16px max(10px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  header { display: flex; align-items: center; gap: 10px; }
+  .title { font-weight: 700; font-size: 17px; letter-spacing: .3px; }
+  .title span { color: var(--lamp); }
+  .level { font-size: 12px; color: var(--muted); line-height: 1.2; }
+  .level b { color: var(--text); font-weight: 600; }
+  .grow { flex: 1; min-width: 0; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--btn); color: var(--text); font-size: 18px; cursor: pointer;
+    display: grid; place-items: center; touch-action: manipulation;
+  }
+  .icon-btn:active { background: var(--btn-active); }
+  .stats { display: flex; gap: 8px; align-items: stretch; }
+  .stat {
+    flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 5px 8px;
+  }
+  .stat small { display: block; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat div { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat.wide { flex: 1.7; }
+  .stat.next { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+  #next { width: 44px; height: 26px; }
+  #wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #board { position: relative; touch-action: none; }
+  #board canvas { display: block; border-radius: 8px; }
+  .overlay {
+    position: absolute; inset: 0; border-radius: 8px; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: rgba(10, 12, 15, .82); text-align: center; padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .overlay h2 { margin: 0; font-size: 21px; line-height: 1.25; }
+  .overlay p { margin: 0; color: var(--muted); font-size: 14px; }
+  .overlay .score { color: var(--text); font-size: 15px; }
+  .cta {
+    border: 0; border-radius: 12px; padding: 13px 20px; font-size: 16px; font-weight: 700;
+    background: var(--lamp); color: #1b1606; cursor: pointer; touch-action: manipulation;
+  }
+  .cta.secondary { background: var(--btn); color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  #outage {
+    position: absolute; inset: 0; border-radius: 8px; pointer-events: none;
+    background: rgba(0, 0, 0, .38); opacity: 0; transition: opacity .35s;
+    display: flex; align-items: flex-start; justify-content: center; padding-top: 18%;
+  }
+  #outage.on { opacity: 1; }
+  #outage span {
+    background: #2a1d0a; color: var(--lamp); border: 1px solid #5c4314;
+    padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 15px;
+  }
+  #toasts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .toast {
+    position: absolute; left: 50%; top: 45%; transform: translate(-50%, 0);
+    background: rgba(242, 193, 78, .96); color: #1b1606; font-weight: 800; font-size: 15px;
+    padding: 6px 12px; border-radius: 9px; white-space: nowrap;
+    animation: float 1.3s ease-out forwards; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+  .toast.quick { background: rgba(230, 233, 238, .92); font-size: 13px; animation-duration: .75s; top: 70%; }
+  .toast.level { background: #23303b; color: var(--text); border: 1px solid #3a4b5a; top: 30%; }
+  @keyframes float {
+    0% { opacity: 0; transform: translate(-50%, 12px) scale(.92); }
+    15% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -38px); }
+  }
+  .controls { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .controls button {
+    height: 62px; border-radius: 14px; border: 1px solid var(--line); background: var(--btn);
+    color: var(--text); font-size: 24px; cursor: pointer; touch-action: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  }
+  .controls button small { font-size: 10px; color: var(--muted); }
+  .controls button.pressed, .controls button:active { background: var(--btn-active); }
+  .hint { text-align: center; font-size: 11px; color: var(--muted); display: none; }
+  @media (hover: hover) and (pointer: fine) { .hint { display: block; } }
+  @media (max-height: 600px) {
+    .controls button { height: 50px; font-size: 20px; }
+    .controls button small { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="grow">
+    <div class="title">Світло<span>блоки</span></div>
+    <div class="level">Рівень <span id="levelNum">1</span>: <b id="levelName">Заява подана</b></div>
+  </div>
+  <button class="icon-btn" id="pauseBtn" aria-label="Пауза">⏸</button>
+  <button class="icon-btn" id="restartBtn" aria-label="Почати заново">↻</button>
+</header>
+
+<div class="stats">
+  <div class="stat"><small>Рахунок</small><div id="score">0</div></div>
+  <div class="stat wide"><small>Зареєстровано ділянок</small><div id="best">0</div></div>
+  <div class="stat next"><small>Далі</small><canvas id="next"></canvas></div>
+</div>
+
+<div id="wrap">
+  <div id="board">
+    <canvas id="field"></canvas>
+    <div id="outage"><span>Планове відключення</span></div>
+    <div id="toasts"></div>
+    <div class="overlay" id="pauseOverlay">
+      <h2>Технічна перерва</h2>
+      <p>Реєстр тимчасово не приймає ділянки</p>
+      <button class="cta" id="resumeBtn">Продовжити</button>
+    </div>
+    <div class="overlay" id="overOverlay">
+      <h2>АС ПМЗВ недоступна.<br>Спробуйте пізніше</h2>
+      <p class="score" id="overScore"></p>
+      <p id="overBest"></p>
+      <button class="cta" id="againBtn">Подати заяву повторно</button>
+      <button class="cta secondary" id="shareBtn" style="display:none">Поділитися</button>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <button data-act="left" aria-label="Вліво">◀<small>вліво</small></button>
+  <button data-act="rotate" aria-label="Поворот">⟳<small>поворот</small></button>
+  <button data-act="right" aria-label="Вправо">▶<small>вправо</small></button>
+  <button data-act="down" aria-label="Вниз">▼<small>вниз</small></button>
+  <button data-act="drop" aria-label="Миттєве падіння">⤓<small>скинути</small></button>
+</div>
+<div class="hint">← → рух · ↑ поворот · ↓ вниз · пробіл — скинути · P — пауза</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- поле-реєстр ----------
+  const COLS = 10, ROWS = 20, CELL = 24, GUT_L = 30, GUT_T = 22, PAD = 3;
+  const LW = GUT_L + COLS * CELL + PAD, LH = GUT_T + ROWS * CELL + PAD;
+  const QUEUES = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2', '5.1', '5.2'];
+  const FIRST_HOUR = 24 - ROWS; // рядки — години 04:00…23:00
+
+  const COLORS = {
+    bg: '#12161b', cellA: '#181d24', cellB: '#1c222a', line: '#242b34',
+    label: '#7d8898', lamp: '#f2c14e',
+  };
+  // Земельні ділянки: власна «ґрунтова» палітра
+  const PIECES = {
+    I: { color: '#c47a5a', m: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]] },
+    O: { color: '#7f9c62', m: [[1,1],[1,1]] },
+    T: { color: '#5f8fa3', m: [[0,1,0],[1,1,1],[0,0,0]] },
+    S: { color: '#b99a5b', m: [[0,1,1],[1,1,0],[0,0,0]] },
+    Z: { color: '#a86a7c', m: [[1,1,0],[0,1,1],[0,0,0]] },
+    J: { color: '#6f7fb0', m: [[1,0,0],[1,1,1],[0,0,0]] },
+    L: { color: '#9a8670', m: [[0,0,1],[1,1,1],[0,0,0]] },
+  };
+  const LEVEL_NAMES = ['Заява подана', 'Черга в ЦНАПі', 'Держгеокадастр думає',
+    'АС ПМЗВ лягла', 'Технічна перерва', 'Сервер на реєстрації', 'Кадастровий апокаліпсис'];
+  const CLEAR_PHRASES = ['Ділянку зареєстровано', 'Відомості внесено', 'Світло дали', 'Витяг сформовано'];
+  const LINE_POINTS = [0, 100, 300, 500, 800];
+  const BEST_KEY = 'svitloblocks.best';
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('field'), ctx = canvas.getContext('2d');
+  const nextCanvas = $('next'), nctx = nextCanvas.getContext('2d');
+  const board = $('board'), wrap = $('wrap');
+
+  // ---------- сховище (у Telegram може бути недоступне) ----------
+  function loadBest() {
+    try { return parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { return 0; }
+  }
+  function saveBest(v) {
+    try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) { /* без рекорду — теж гра */ }
+  }
+
+  // ---------- стан ----------
+  let grid, piece, nextKey, bag, score, lines, level, best = loadBest();
+  let dropTimer, paused, over, clearing, clearRows, clearTimer, phraseIdx = 0;
+  let playTime, nextOutageAt, outageUntil;
+
+  function emptyGrid() { return Array.from({ length: ROWS }, () => Array(COLS).fill(null)); }
+
+  function takeKey() {
+    if (!bag || !bag.length) {
+      bag = Object.keys(PIECES);
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+    }
+    return bag.pop();
+  }
+
+  function makePiece(key) {
+    const m = PIECES[key].m.map((r) => r.slice());
+    const top = m.findIndex((r) => r.some(Boolean));
+    return { key, m, x: Math.floor((COLS - m[0].length) / 2), y: -top };
+  }
+
+  function collides(m, x, y) {
+    for (let r = 0; r < m.length; r++) {
+      for (let c = 0; c < m[r].length; c++) {
+        if (!m[r][c]) continue;
+        const gx = x + c, gy = y + r;
+        if (gx < 0 || gx >= COLS || gy >= ROWS) return true;
+        if (gy >= 0 && grid[gy][gx]) return true;
+      }
+    }
+    return false;
+  }
+
+  function rotated(m) {
+    const n = m.length;
+    return m.map((row, r) => row.map((_, c) => m[n - 1 - c][r]));
+  }
+
+  function gravityMs() { return Math.max(70, Math.round(800 * Math.pow(0.82, level - 1))); }
+  function levelName(l) { return LEVEL_NAMES[Math.min(l, LEVEL_NAMES.length) - 1]; }
+
+  function reset() {
+    grid = emptyGrid(); bag = []; score = 0; lines = 0; level = 1;
+    paused = false; over = false; clearing = false; clearRows = []; dropTimer = 0;
+    playTime = 0; scheduleOutage(); outageUntil = 0; $('outage').classList.remove('on');
+    nextKey = takeKey(); spawn();
+    $('pauseOverlay').classList.remove('show'); $('overOverlay').classList.remove('show');
+    updateHud();
+  }
+
+  function scheduleOutage() { nextOutageAt = playTime + 120000 + Math.random() * 120000; }
+
+  function spawn() {
+    piece = makePiece(nextKey);
+    nextKey = takeKey();
+    drawNext();
+    if (collides(piece.m, piece.x, piece.y)) gameOver();
+  }
+
+  // ---------- дії ----------
+  function move(dx) {
+    if (!active()) return;
+    if (!collides(piece.m, piece.x + dx, piece.y)) piece.x += dx;
+  }
+
+  function rotate() {
+    if (!active() || piece.key === 'O') return;
+    const m = rotated(piece.m);
+    for (const k of [0, -1, 1, -2, 2]) {
+      if (!collides(m, piece.x + k, piece.y)) { piece.m = m; piece.x += k; return; }
+    }
+    if (!collides(m, piece.x, piece.y - 1)) { piece.m = m; piece.y -= 1; }
+  }
+
+  function softDrop() {
+    if (!active()) return;
+    if (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; score += 1; dropTimer = 0; updateHud(); }
+    else lock();
+  }
+
+  function hardDrop() {
+    if (!active()) return;
+    let n = 0;
+    while (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; n++; }
+    score += n * 2;
+    toast('Прискорена реєстрація', 'quick');
+    lock();
+  }
+
+  function active() { return piece && !paused && !over && !clearing; }
+
+  function lock() {
+    const { m, x, y } = piece;
+    let overflow = false;
+    for (let r = 0; r < m.length; r++) {
+      for (let c = 0; c < m[r].length; c++) {
+        if (!m[r][c]) continue;
+        if (y + r < 0) overflow = true; else grid[y + r][x + c] = PIECES[piece.key].color;
+      }
+    }
+    piece = null;
+    if (overflow) { gameOver(); return; }
+    const full = [];
+    grid.forEach((row, i) => { if (row.every(Boolean)) full.push(i); });
+    if (full.length) {
+      clearing = true; clearRows = full; clearTimer = 260;
+      const phrase = CLEAR_PHRASES[phraseIdx++ % CLEAR_PHRASES.length];
+      toast(full.length > 1 ? `${phrase} ×${full.length}` : phrase);
+    } else {
+      spawn();
+    }
+    updateHud();
+  }
+
+  function finishClear() {
+    const n = clearRows.length;
+    grid = grid.filter((_, i) => !clearRows.includes(i));
+    while (grid.length < ROWS) grid.unshift(Array(COLS).fill(null));
+    clearing = false; clearRows = [];
+    score += LINE_POINTS[n] * level;
+    lines += n;
+    const newLevel = Math.floor(lines / 10) + 1;
+    if (newLevel > level) {
+      level = newLevel;
+      toast(`Рівень ${level}: ${levelName(level)}`, 'level');
+    }
+    spawn();
+    updateHud();
+  }
+
+  function setPaused(p) {
+    if (over || paused === p) return;
+    paused = p;
+    $('pauseOverlay').classList.toggle('show', p);
+    $('pauseBtn').textContent = p ? '▶' : '⏸';
+  }
+
+  function gameOver() {
+    over = true; piece = null;
+    if (score > best) best = score;
+    saveBest(best);
+    $('overScore').textContent = `Рахунок: ${score} · рядків: ${lines}`;
+    $('overBest').textContent = `Зареєстровано ділянок (рекорд): ${best}`;
+    $('shareBtn').style.display = window.TelegramGameProxy ? '' : 'none';
+    $('overOverlay').classList.add('show');
+    updateHud();
+  }
+
+  // ---------- інтерфейс ----------
+  function updateHud() {
+    if (score > best) { best = score; saveBest(best); }
+    $('score').textContent = score;
+    $('best').textContent = best;
+    $('levelNum').textContent = level;
+    $('levelName').textContent = levelName(level);
+  }
+
+  function toast(text, kind) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.textContent = text;
+    el.addEventListener('animationend', () => el.remove());
+    $('toasts').appendChild(el);
+  }
+
+  // ---------- малювання ----------
+  function cellRect(c, r) { return [GUT_L + c * CELL, GUT_T + r * CELL]; }
+
+  function drawBlock(g, x, y, size, color, alpha) {
+    g.globalAlpha = alpha == null ? 1 : alpha;
+    g.fillStyle = color;
+    roundRect(g, x + 1.5, y + 1.5, size - 3, size - 3, 4); g.fill();
+    // межа ділянки, як на кадастровій карті
+    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1;
+    roundRect(g, x + 2, y + 2, size - 4, size - 4, 3.5); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.14)';
+    g.fillRect(x + 4, y + 4, size - 8, 3);
+    g.globalAlpha = 1;
+  }
+
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+
+  function draw() {
+    ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, LW, LH);
+
+    // підписи черг і годин
+    ctx.fillStyle = COLORS.label; ctx.font = '600 10px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    QUEUES.forEach((q, c) => ctx.fillText(q, GUT_L + c * CELL + CELL / 2, GUT_T / 2 + 1));
+    ctx.textAlign = 'right';
+    for (let r = 0; r < ROWS; r++) {
+      const h = String(FIRST_HOUR + r).padStart(2, '0');
+      ctx.fillText(h, GUT_L - 5, GUT_T + r * CELL + CELL / 2);
+    }
+
+    // клітинки: пари стовпців однієї черги підсвічені однаково
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const [x, y] = cellRect(c, r);
+        ctx.fillStyle = Math.floor(c / 2) % 2 ? COLORS.cellB : COLORS.cellA;
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+    }
+    ctx.strokeStyle = COLORS.line; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 0; c <= COLS; c++) { const x = GUT_L + c * CELL + .5; ctx.moveTo(x, GUT_T); ctx.lineTo(x, GUT_T + ROWS * CELL); }
+    for (let r = 0; r <= ROWS; r++) { const y = GUT_T + r * CELL + .5; ctx.moveTo(GUT_L, y); ctx.lineTo(GUT_L + COLS * CELL, y); }
+    ctx.stroke();
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (grid[r][c]) { const [x, y] = cellRect(c, r); drawBlock(ctx, x, y, CELL, grid[r][c]); }
+      }
+    }
+
+    // заповнений рядок — «світло дали»
+    if (clearing) {
+      const k = Math.max(0, clearTimer / 260);
+      for (const r of clearRows) {
+        ctx.globalAlpha = 0.35 + 0.6 * k;
+        ctx.fillStyle = COLORS.lamp;
+        ctx.fillRect(GUT_L, GUT_T + r * CELL, COLS * CELL, CELL);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (piece) {
+      const color = PIECES[piece.key].color;
+      let gy = piece.y;
+      while (!collides(piece.m, piece.x, gy + 1)) gy++;
+      forCells(piece.m, piece.x, gy, (x, y) => {
+        ctx.strokeStyle = color; ctx.globalAlpha = .45; ctx.lineWidth = 1.5;
+        roundRect(ctx, x + 2.5, y + 2.5, CELL - 5, CELL - 5, 4); ctx.stroke(); ctx.globalAlpha = 1;
+      });
+      forCells(piece.m, piece.x, piece.y, (x, y) => drawBlock(ctx, x, y, CELL, color));
+    }
+  }
+
+  function forCells(m, px, py, fn) {
+    for (let r = 0; r < m.length; r++) {
+      for (let c = 0; c < m[r].length; c++) {
+        if (m[r][c] && py + r >= 0) fn(...cellRect(px + c, py + r));
+      }
+    }
+  }
+
+  function drawNext() {
+    const p = PIECES[nextKey];
+    const cells = [];
+    p.m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([c, r]); }));
+    const minC = Math.min(...cells.map((a) => a[0])), maxC = Math.max(...cells.map((a) => a[0]));
+    const minR = Math.min(...cells.map((a) => a[1])), maxR = Math.max(...cells.map((a) => a[1]));
+    const w = nextCanvas.width, h = nextCanvas.height;
+    const s = Math.min(w / 4.4, h / 2.4);
+    const ox = (w - (maxC - minC + 1) * s) / 2, oy = (h - (maxR - minR + 1) * s) / 2;
+    nctx.clearRect(0, 0, w, h);
+    cells.forEach(([c, r]) => drawBlock(nctx, ox + (c - minC) * s, oy + (r - minR) * s, s, p.color));
+  }
+
+  // ---------- розмір під екран ----------
+  let cellCss = CELL;
+  function resize() {
+    const scale = Math.max(0.5, Math.min(wrap.clientHeight / LH, wrap.clientWidth / LW));
+    const w = Math.floor(LW * scale), h = Math.floor(LH * scale);
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    board.style.width = w + 'px'; board.style.height = h + 'px';
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(canvas.width / LW, 0, 0, canvas.height / LH, 0, 0);
+    cellCss = CELL * scale;
+
+    const nw = 44, nh = 26;
+    nextCanvas.width = nw * dpr; nextCanvas.height = nh * dpr;
+    if (nextKey) drawNext();
+    draw();
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 150));
+
+  // ---------- головний цикл ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(100, now - last); last = now;
+    if (!paused && !over) {
+      playTime += dt;
+      if (clearing) {
+        clearTimer -= dt;
+        if (clearTimer <= 0) finishClear();
+      } else if (piece) {
+        dropTimer += dt;
+        if (dropTimer >= gravityMs()) {
+          dropTimer = 0;
+          if (!collides(piece.m, piece.x, piece.y + 1)) piece.y++; else lock();
+        }
+      }
+      // рідкісний жарт: поле темнішає, але гра йде далі
+      if (playTime >= nextOutageAt) {
+        $('outage').classList.add('on'); outageUntil = playTime + 2000; scheduleOutage();
+      }
+      if (outageUntil && playTime >= outageUntil) {
+        $('outage').classList.remove('on'); outageUntil = 0;
+      }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- кнопки ----------
+  const ACTIONS = { left: () => move(-1), right: () => move(1), rotate, down: softDrop, drop: hardDrop };
+  const REPEAT = new Set(['left', 'right', 'down']);
+  document.querySelectorAll('.controls button').forEach((btn) => {
+    const act = btn.dataset.act;
+    let delay = null, interval = null;
+    const stop = () => {
+      clearTimeout(delay); clearInterval(interval); delay = interval = null;
+      btn.classList.remove('pressed');
+    };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      btn.classList.add('pressed');
+      ACTIONS[act]();
+      if (REPEAT.has(act)) {
+        delay = setTimeout(() => { interval = setInterval(ACTIONS[act], act === 'down' ? 45 : 70); }, 170);
+      }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => btn.addEventListener(t, stop));
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  });
+
+  $('pauseBtn').addEventListener('click', () => setPaused(!paused));
+  $('resumeBtn').addEventListener('click', () => setPaused(false));
+  $('restartBtn').addEventListener('click', () => { reset(); $('pauseBtn').textContent = '⏸'; });
+  $('againBtn').addEventListener('click', () => { reset(); $('pauseBtn').textContent = '⏸'; });
+  $('shareBtn').addEventListener('click', () => {
+    try { window.TelegramGameProxy.shareScore(); } catch (e) { /* поза Telegram */ }
+  });
+
+  // ---------- свайпи по полю ----------
+  let touch = null;
+  board.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.overlay')) return;
+    touch = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), moved: false };
+    try { board.setPointerCapture(e.pointerId); } catch (err) { /* не критично */ }
+  });
+  board.addEventListener('pointermove', (e) => {
+    if (!touch) return;
+    const step = Math.max(14, cellCss * 0.9);
+    while (Math.abs(e.clientX - touch.x) >= step) {
+      const dir = Math.sign(e.clientX - touch.x);
+      move(dir); touch.x += dir * step; touch.moved = true;
+    }
+    while (e.clientY - touch.y >= step) {
+      softDrop(); touch.y += step; touch.moved = true;
+    }
+  });
+  board.addEventListener('pointerup', (e) => {
+    if (!touch) return;
+    const dt = performance.now() - touch.t0;
+    const dx = e.clientX - touch.x0, dy = e.clientY - touch.y0;
+    if (dy > 50 && dt < 260 && dy > Math.abs(dx) * 1.5) hardDrop();          // різкий змах униз
+    else if (!touch.moved && dt < 300 && Math.hypot(dx, dy) < 12) rotate();   // тап — поворот
+    touch = null;
+  });
+  board.addEventListener('pointercancel', () => { touch = null; });
+
+  // ---------- клавіатура ----------
+  document.addEventListener('keydown', (e) => {
+    const k = e.key;
+    if (over && (k === 'Enter' || k === ' ')) { e.preventDefault(); reset(); return; }
+    if (k === 'p' || k === 'P' || k === 'з' || k === 'З' || k === 'Escape') { setPaused(!paused); return; }
+    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', ArrowUp: 'rotate', ' ': 'drop' };
+    if (map[k]) {
+      e.preventDefault();
+      if (k === ' ' && e.repeat) return;
+      ACTIONS[map[k]]();
+    }
+  });
+
+  // згорнули Telegram або вкладку — технічна перерва
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
+
+  reset();
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
