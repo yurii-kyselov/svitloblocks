@@ -202,6 +202,12 @@
   let grid, piece, nextKey, bag, score, lines, level, best = loadBest();
   let dropTimer, paused, over, clearing, clearRows, clearTimer, phraseIdx = 0;
   let playTime, nextOutageAt, outageUntil;
+  // Номер поточної фігури: жест чи автоповтор, початі з однією фігурою,
+  // не мають права зачепити наступну
+  let pieceSerial = 0;
+  // Після миттєвого падіння нове не приймаємо — проти подвійного спрацювання
+  const HARD_DROP_PAUSE = 150;
+  let lastHardDrop = -Infinity;
 
   function emptyGrid() { return Array.from({ length: ROWS }, () => Array(COLS).fill(null)); }
 
@@ -255,6 +261,7 @@
 
   function spawn() {
     piece = makePiece(nextKey);
+    pieceSerial++;
     nextKey = takeKey();
     drawNext();
     if (collides(piece.m, piece.x, piece.y)) gameOver();
@@ -275,19 +282,25 @@
     if (!collides(m, piece.x, piece.y - 1)) { piece.m = m; piece.y -= 1; }
   }
 
+  // Плавний спуск на клітинку. На дні нічого не робить: фігуру кладе гравітація,
+  // інакше утримання «вниз» чи довгий свайп перескакують на наступну фігуру
   function softDrop() {
-    if (!active()) return;
-    if (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; score += 1; dropTimer = 0; updateHud(); }
-    else lock();
+    if (!active() || collides(piece.m, piece.x, piece.y + 1)) return false;
+    piece.y++; score += 1; dropTimer = 0; updateHud();
+    return true;
   }
 
   function hardDrop() {
-    if (!active()) return;
+    if (!active()) return false;
+    const now = performance.now();
+    if (now - lastHardDrop < HARD_DROP_PAUSE) return false;
+    lastHardDrop = now;
     let n = 0;
     while (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; n++; }
     score += n * 2;
     toast('Прискорена реєстрація', 'quick');
     lock();
+    return true;
   }
 
   function active() { return piece && !paused && !over && !clearing; }
@@ -518,16 +531,18 @@
   document.querySelectorAll('.controls button').forEach((btn) => {
     const act = btn.dataset.act;
     let delay = null, interval = null;
-    const stop = () => {
-      clearTimeout(delay); clearInterval(interval); delay = interval = null;
-      btn.classList.remove('pressed');
-    };
+    const halt = () => { clearTimeout(delay); clearInterval(interval); delay = interval = null; };
+    const stop = () => { halt(); btn.classList.remove('pressed'); };
     btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
+      e.preventDefault(); // без емуляції миші після дотику
+      halt();
       btn.classList.add('pressed');
+      const serial = pieceSerial;
       ACTIONS[act]();
       if (REPEAT.has(act)) {
-        delay = setTimeout(() => { interval = setInterval(ACTIONS[act], act === 'down' ? 45 : 70); }, 170);
+        // Автоповтор веде лише ту фігуру, з якою почали; нова — після відпускання
+        const tick = () => { if (pieceSerial !== serial) halt(); else ACTIONS[act](); };
+        delay = setTimeout(() => { interval = setInterval(tick, act === 'down' ? 45 : 70); }, 170);
       }
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => btn.addEventListener(t, stop));
@@ -543,32 +558,78 @@
   });
 
   // ---------- свайпи по полю ----------
-  let touch = null;
-  board.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.overlay')) return;
-    touch = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), moved: false };
-    try { board.setPointerCapture(e.pointerId); } catch (err) { /* не критично */ }
-  });
-  board.addEventListener('pointermove', (e) => {
-    if (!touch) return;
+  // Один дотик = одна дія над однією фігурою:
+  //  • тап — поворот;
+  //  • вбік — фігура йде за пальцем по стовпцях;
+  //  • повільно вниз — плавний спуск за пальцем;
+  //  • різкий змах униз — миттєве падіння, після нього жест закінчено.
+  // Жест прив'язаний до фігури, що була на полі на touchstart: щойно вона лягла,
+  // решта подій до наступного touchstart ігнорується. Слухаємо саме touch-події
+  // і гасимо preventDefault, щоб браузер не дослав емульованих подій миші.
+  const TAP_MOVE = 10;          // px: менше — це ще тап
+  const TAP_TIME = 300;         // мс
+  const FLICK_TIME = 250;       // мс: змах униз має вкластися в цей час...
+  const FLICK_SPEED = 0.5;      // px/мс: ...і бути не повільнішим за це
+  let gesture = null;
+
+  const flickDistance = () => Math.max(40, cellCss * 1.8);
+  const isFlick = (dy, dt) => dy >= flickDistance() && dt <= FLICK_TIME && dy / Math.max(dt, 1) >= FLICK_SPEED;
+  const touchOf = (e) => gesture && Array.from(e.changedTouches).find((t) => t.identifier === gesture.id);
+  const fromOverlay = (e) => e.target && e.target.closest && e.target.closest('.overlay');
+
+  board.addEventListener('touchstart', (e) => {
+    if (fromOverlay(e)) return; // кнопки на оверлеях мають отримати свій click
+    e.preventDefault();
+    if (gesture) return;        // другий палець під час жесту — ігноруємо
+    const t = e.changedTouches[0];
+    gesture = {
+      id: t.identifier, x0: t.clientX, y0: t.clientY, t0: performance.now(),
+      mode: null, cols: 0, rows: 0, handled: false, serial: pieceSerial,
+    };
+  }, { passive: false });
+
+  board.addEventListener('touchmove', (e) => {
+    const t = touchOf(e);
+    if (!t) return;
+    e.preventDefault();
+    if (gesture.handled) return;
+    if (gesture.serial !== pieceSerial) { gesture.handled = true; return; } // фігура вже лягла
+    const dx = t.clientX - gesture.x0, dy = t.clientY - gesture.y0;
+    if (!gesture.mode) {
+      if (Math.hypot(dx, dy) < TAP_MOVE) return;
+      gesture.mode = Math.abs(dx) > Math.abs(dy) ? 'side' : (dy > 0 ? 'down' : 'up');
+    }
     const step = Math.max(14, cellCss * 0.9);
-    while (Math.abs(e.clientX - touch.x) >= step) {
-      const dir = Math.sign(e.clientX - touch.x);
-      move(dir); touch.x += dir * step; touch.moved = true;
+    if (gesture.mode === 'side') {
+      const target = Math.trunc(dx / step);
+      while (gesture.cols !== target) {
+        const dir = Math.sign(target - gesture.cols);
+        move(dir); gesture.cols += dir;
+      }
+    } else if (gesture.mode === 'down') {
+      if (isFlick(dy, performance.now() - gesture.t0)) {
+        hardDrop(); gesture.handled = true; return;
+      }
+      const target = Math.floor(dy / step);
+      while (gesture.rows < target) { softDrop(); gesture.rows++; }
     }
-    while (e.clientY - touch.y >= step) {
-      softDrop(); touch.y += step; touch.moved = true;
-    }
-  });
-  board.addEventListener('pointerup', (e) => {
-    if (!touch) return;
-    const dt = performance.now() - touch.t0;
-    const dx = e.clientX - touch.x0, dy = e.clientY - touch.y0;
-    if (dy > 50 && dt < 260 && dy > Math.abs(dx) * 1.5) hardDrop();          // різкий змах униз
-    else if (!touch.moved && dt < 300 && Math.hypot(dx, dy) < 12) rotate();   // тап — поворот
-    touch = null;
-  });
-  board.addEventListener('pointercancel', () => { touch = null; });
+  }, { passive: false });
+
+  board.addEventListener('touchend', (e) => {
+    const t = touchOf(e);
+    if (!t) return;
+    e.preventDefault();
+    const g = gesture;
+    gesture = null; // повний скид: координати, зміщення, прапорці
+    if (g.handled || g.serial !== pieceSerial) return;
+    const dt = performance.now() - g.t0;
+    const dx = t.clientX - g.x0, dy = t.clientY - g.y0;
+    if (!g.mode && dt <= TAP_TIME && Math.hypot(dx, dy) < TAP_MOVE) rotate();
+    // змах міг бути таким швидким, що touchmove майже не прийшли
+    else if (g.mode === 'down' && isFlick(dy, dt)) hardDrop();
+  }, { passive: false });
+
+  board.addEventListener('touchcancel', () => { gesture = null; });
 
   // ---------- клавіатура ----------
   document.addEventListener('keydown', (e) => {
