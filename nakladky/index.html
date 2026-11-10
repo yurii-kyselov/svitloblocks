@@ -152,12 +152,13 @@
 
   const LEVELS = {
     pai:     { title: 'Пай',     rows: 9,  cols: 9,  mines: 10 },
-    masyv:   { title: 'Масив',   rows: 16, cols: 16, mines: 40 },
+    // Масиву дозволено дрібніші клітинки: так 16 стовпців влазять у 360 px без прокрутки
+    masyv:   { title: 'Масив',   rows: 16, cols: 16, mines: 40, minCell: 18 },
     kadastr: { title: 'Кадастр', rows: 16, cols: 30, mines: 99 },
   };
   const LONG_PRESS = 400;   // мс — спір
   const MOVE_CANCEL = 10;   // px — далі це вже прокрутка, а не натискання
-  const MIN_CELL = 22, MAX_CELL = 40, GAP = 2, BOARD_PAD = 2;
+  const MIN_CELL = 22, MAX_CELL = 40, GAP = 2, BOARD_PAD = 2; // MIN_CELL — якщо рівень не задав свій minCell
   const BEST_KEY = 'nakladky.best.';
   const LEVEL_KEY = 'nakladky.level';
 
@@ -326,7 +327,8 @@
   const boardWidth = (c) => cols * c + (cols - 1) * GAP + 2 * BOARD_PAD;
   function fit() {
     const w = wrap.clientWidth;
-    const c = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.floor((w - (cols - 1) * GAP - 2 * BOARD_PAD) / cols)));
+    const min = LEVELS[levelKey].minCell || MIN_CELL;
+    const c = Math.max(min, Math.min(MAX_CELL, Math.floor((w - (cols - 1) * GAP - 2 * BOARD_PAD) / cols)));
     boardEl.style.setProperty('--c', c + 'px');
     cellSize = c;
     const wide = boardWidth(c) > w;

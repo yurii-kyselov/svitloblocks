@@ -233,14 +233,27 @@ for (const [w, h] of [[328, 480], [600, 300], [1200, 800]]) {
   T.newGame('kadastr');
   check(`Кадастр на екрані ${w}×${h} — 30 стовпців × 16 рядків`, T.cols === 30 && T.rows === 16, `${T.cols}×${T.rows}`);
 }
-// На телефоні клітинки не дрібніші за 22 px; що не влазить — гортається в рамці
-els.wrap.clientWidth = 328;
-for (const lvl of ['pai', 'masyv', 'kadastr']) {
-  T.newGame(lvl);
-  const width = T.cols * T.cellSize + (T.cols - 1) * 2 + 4;
-  const hint = els.scrollHint.classList.contains('show');
-  check(`${lvl} на 360 px: клітинка ${T.cellSize} px, підказка про прокрутку ${hint ? 'є' : 'нема'}`,
-    T.cellSize >= 22 && T.cellSize <= 40 && hint === width > 328 && els.wrap.classList.contains('wide') === hint);
+// Мінімум клітинки: Масив — 18 px, решта — 22 px; що не влазить — гортається в рамці.
+// Екран 360 px мінус поля сторінки 2 × 16 px = 328 px під поле
+const MIN = { pai: 22, masyv: 18, kadastr: 22 };
+const fits = (w) => T.cols * T.cellSize + (T.cols - 1) * 2 + 4 <= w;
+for (const [w, label] of [[328, '360 px'], [280, '312 px']]) {
+  els.wrap.clientWidth = w;
+  for (const lvl of ['pai', 'masyv', 'kadastr']) {
+    T.newGame(lvl);
+    const hint = els.scrollHint.classList.contains('show');
+    check(`${lvl} на ${label}: клітинка ${T.cellSize} px, прокрутка ${hint ? 'є' : 'нема'}`,
+      T.cellSize >= MIN[lvl] && T.cellSize <= 40 && hint === !fits(w) && els.wrap.classList.contains('wide') === hint);
+  }
 }
+// Головне: Масив на 360 px вміщується без прокрутки, інші рівні 22 px не порушують
+els.wrap.clientWidth = 328;
+T.newGame('masyv');
+check('Масив на 360 px вміщається без прокрутки', fits(328) && !els.scrollHint.classList.contains('show'), `клітинка ${T.cellSize} px`);
+T.newGame('kadastr');
+check('Кадастр лишається з мінімумом 22 px', T.cellSize === 22);
+els.wrap.clientWidth = 200;
+T.newGame('masyv');
+check('Масив на дуже вузькому екрані не дрібніший за 18 px', T.cellSize === 18 && els.scrollHint.classList.contains('show'));
 
 process.exit(failures ? 1 : 0);
