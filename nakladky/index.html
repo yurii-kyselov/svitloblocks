@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<title>Накладки</title>
+<script src="https://telegram.org/js/games.js" defer></script>
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #171c22;
+    --line: #262e37;
+    --text: #e7eaee;
+    --muted: #8b95a3;
+    --accent: #e9b949;
+    --tile: #3a4a3c;
+    --tile-top: #46594a;
+    --open: #1b2128;
+    --boom: #b8483e;
+    --flag: #e9b949;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  body {
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    padding: max(8px, env(safe-area-inset-top)) 16px max(10px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  header { display: flex; align-items: baseline; gap: 8px; }
+  .title { font-weight: 800; font-size: 18px; }
+  .title span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 12px; }
+  .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .levels button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+    padding: 6px 4px; cursor: pointer; font: inherit; touch-action: manipulation;
+  }
+  .levels button b { display: block; font-size: 14px; }
+  .levels button small { color: var(--muted); font-size: 11px; }
+  .levels button[aria-pressed="true"] { border-color: var(--accent); background: #251f10; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; min-width: 0; }
+  .stat small { display: block; font-size: 10.5px; line-height: 1.15; color: var(--muted); }
+  .stat { display: flex; flex-direction: column; justify-content: space-between; }
+  .stat div { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #banner {
+    display: none; border-radius: 12px; padding: 10px 12px; gap: 10px; align-items: center;
+    border: 1px solid var(--line); background: var(--panel);
+  }
+  #banner.show { display: flex; }
+  #banner.win { border-color: #4f7a52; background: #17241a; }
+  #banner.lose { border-color: #7a3b35; background: #2a1715; }
+  #banner .msg { flex: 1; min-width: 0; font-size: 14px; line-height: 1.3; }
+  #banner .msg b { display: block; font-size: 15px; }
+  #banner .msg small { color: var(--muted); }
+  #banner .actions { display: flex; flex-direction: column; gap: 6px; }
+  .cta {
+    border: 0; border-radius: 10px; padding: 9px 12px; font: inherit; font-weight: 700; font-size: 14px;
+    background: var(--accent); color: #1e1705; cursor: pointer; touch-action: manipulation; white-space: nowrap;
+  }
+  .cta.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  #wrap { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; }
+  #board {
+    --c: 32px; display: grid; gap: 2px; margin: 0 auto; width: max-content; padding: 2px;
+    background: var(--line); border-radius: 8px;
+  }
+  .cell {
+    width: var(--c); height: var(--c); border-radius: 4px; display: grid; place-items: center;
+    font-weight: 800; font-size: calc(var(--c) * .52); line-height: 1; cursor: pointer;
+    background: linear-gradient(var(--tile-top), var(--tile)); touch-action: manipulation;
+  }
+  .cell.pressed { filter: brightness(1.25); }
+  .cell.open { background: var(--open); cursor: default; }
+  .cell.flag::after { content: "⚑"; color: var(--flag); font-size: calc(var(--c) * .58); }
+  .cell.mine { background: #2b2326; }
+  .cell.mine::after { content: "⧉"; color: #e48a7f; font-size: calc(var(--c) * .62); }
+  .cell.boom { background: var(--boom); }
+  .cell.boom::after { color: #fff; }
+  .cell.wrong { background: #2b2326; }
+  .cell.wrong::after { content: "✕"; color: #e48a7f; }
+  .cell[data-n="1"] { color: #7fb2e5; }
+  .cell[data-n="2"] { color: #8fcf8a; }
+  .cell[data-n="3"] { color: #ec8f7d; }
+  .cell[data-n="4"] { color: #b59de8; }
+  .cell[data-n="5"] { color: #e7b45f; }
+  .cell[data-n="6"] { color: #6fd0c8; }
+  .cell[data-n="7"] { color: #e0e0e0; }
+  .cell[data-n="8"] { color: #a0a8b3; }
+  footer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  footer button {
+    height: 52px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  }
+  #modeBtn[aria-pressed="true"] { background: #2a2310; border-color: var(--accent); color: var(--accent); }
+  .hint { text-align: center; font-size: 11px; color: var(--muted); }
+  @media (max-height: 620px) {
+    .levels button small { display: none; }
+    footer button { height: 44px; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Наклад<span>ки</span></div>
+  <div class="sub">знайди всі накладення ділянок</div>
+</header>
+
+<div class="levels" id="levels"></div>
+
+<div class="stats">
+  <div class="stat"><small>Накладок лишилось</small><div id="left">0</div></div>
+  <div class="stat"><small>Строк розгляду</small><div id="timer">0:00</div></div>
+  <div class="stat"><small>Найшвидший витяг</small><div id="best">—</div></div>
+</div>
+
+<div id="banner">
+  <div class="msg" id="bannerMsg"></div>
+  <div class="actions">
+    <button class="cta" id="againBtn">Подати нову заяву</button>
+    <button class="cta ghost" id="shareBtn" style="display:none">Поділитися</button>
+  </div>
+</div>
+
+<div id="wrap"><div id="board" role="grid" aria-label="Поле ділянок"></div></div>
+
+<footer>
+  <button id="modeBtn" aria-pressed="false">⛏ Перевірка</button>
+  <button id="newBtn">↻ Нова заява</button>
+</footer>
+<div class="hint">Тап — перевірити ділянку · довге натискання — спір ⚑ · тап по цифрі — перевірити сусідів</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const LEVELS = {
+    pai:     { title: 'Пай',     rows: 9,  cols: 9,  mines: 10 },
+    masyv:   { title: 'Масив',   rows: 16, cols: 16, mines: 40 },
+    kadastr: { title: 'Кадастр', rows: 16, cols: 30, mines: 99 },
+  };
+  const LONG_PRESS = 400;   // мс — спір
+  const MOVE_CANCEL = 10;   // px — далі це вже прокрутка, а не натискання
+  const MIN_CELL = 26, MAX_CELL = 40;
+  const BEST_KEY = 'nakladky.best.';
+  const LEVEL_KEY = 'nakladky.level';
+
+  const $ = (id) => document.getElementById(id);
+  const boardEl = $('board'), wrap = $('wrap');
+
+  // ---------- сховище (у Telegram може бути недоступне) ----------
+  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function save(key, v) { try { localStorage.setItem(key, String(v)); } catch (e) { /* без рекорду — теж гра */ } }
+  const bestOf = (lvl) => parseInt(load(BEST_KEY + lvl), 10) || 0;
+
+  // ---------- стан ----------
+  let levelKey = LEVELS[load(LEVEL_KEY)] ? load(LEVEL_KEY) : 'pai';
+  let rows, cols, mines, cells, cellEls, state, flags, opened, startedAt, elapsed, timerId, flagMode = false;
+  // cells[i] = { mine, n, open, flag }
+
+  const idx = (r, c) => r * cols + c;
+  function neighbors(i) {
+    const r = Math.floor(i / cols), c = i % cols, out = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const rr = r + dr, cc = c + dc;
+        if (rr >= 0 && rr < rows && cc >= 0 && cc < cols) out.push(idx(rr, cc));
+      }
+    }
+    return out;
+  }
+
+  function newGame(key) {
+    $('banner').className = '';
+    if (key) { levelKey = key; save(LEVEL_KEY, key); }
+    const L = LEVELS[levelKey];
+    rows = L.rows; cols = L.cols; mines = L.mines;
+    // На вузькому вертикальному екрані довге поле ставимо «стоячи»
+    if (cols > rows && wrap.clientWidth < wrap.clientHeight) [rows, cols] = [cols, rows];
+    cells = Array.from({ length: rows * cols }, () => ({ mine: false, n: 0, open: false, flag: false }));
+    state = 'ready'; flags = 0; opened = 0; elapsed = 0; startedAt = null;
+    stopTimer();
+    buildBoard();
+    renderLevels(); updateStats();
+  }
+
+  // Накладки розкладаємо після першого ходу: ні сама клітинка, ні її сусіди не влучають
+  function placeMines(safe) {
+    const banned = new Set([safe, ...neighbors(safe)]);
+    const pool = [];
+    for (let i = 0; i < cells.length; i++) if (!banned.has(i)) pool.push(i);
+    for (let k = 0; k < mines; k++) {
+      const j = k + Math.floor(Math.random() * (pool.length - k));
+      [pool[k], pool[j]] = [pool[j], pool[k]];
+      cells[pool[k]].mine = true;
+    }
+    cells.forEach((cell, i) => { cell.n = neighbors(i).filter((j) => cells[j].mine).length; });
+  }
+
+  // ---------- ходи ----------
+  function open(i) {
+    if (state === 'won' || state === 'lost') return;
+    const cell = cells[i];
+    if (cell.flag) return;
+    if (cell.open) { chord(i); return; }
+    if (state === 'ready') { placeMines(i); state = 'playing'; startTimer(); }
+    if (cell.mine) { lose(i); return; }
+    reveal(i);
+    checkWin();
+  }
+
+  // Порожня ділянка відкриває сусідів, поки не впремося в цифри
+  function reveal(start) {
+    const stack = [start];
+    while (stack.length) {
+      const i = stack.pop(), cell = cells[i];
+      if (cell.open || cell.flag || cell.mine) continue;
+      cell.open = true; opened++; paint(i);
+      if (cell.n === 0) for (const j of neighbors(i)) if (!cells[j].open) stack.push(j);
+    }
+  }
+
+  // Тап по цифрі, коли спорів довкола стільки ж, — перевіряємо решту сусідів
+  function chord(i) {
+    const cell = cells[i];
+    if (!cell.open || !cell.n) return;
+    const around = neighbors(i);
+    if (around.filter((j) => cells[j].flag).length !== cell.n) return;
+    const hit = around.find((j) => !cells[j].flag && !cells[j].open && cells[j].mine);
+    if (hit !== undefined) { lose(hit); return; }
+    for (const j of around) if (!cells[j].flag) reveal(j);
+    checkWin();
+  }
+
+  function toggleFlag(i) {
+    if (state === 'won' || state === 'lost') return false;
+    const cell = cells[i];
+    if (cell.open) return false;
+    cell.flag = !cell.flag; flags += cell.flag ? 1 : -1;
+    paint(i); updateStats();
+    return true;
+  }
+
+  function checkWin() {
+    if (opened !== cells.length - mines) return;
+    state = 'won'; stopTimer();
+    cells.forEach((cell, i) => { if (cell.mine && !cell.flag) { cell.flag = true; flags++; paint(i); } });
+    const secs = Math.max(1, Math.round(elapsed / 1000));
+    const best = bestOf(levelKey);
+    const record = !best || secs < best;
+    if (record) save(BEST_KEY + levelKey, secs);
+    updateStats();
+    showBanner('win', 'Усі накладки виявлено. Витяг сформовано',
+      `Строк розгляду: ${fmt(secs)}${record ? ' — найшвидший витяг!' : ''}`, 'Нова заява');
+  }
+
+  function lose(i) {
+    state = 'lost'; stopTimer();
+    cells.forEach((cell, j) => {
+      if (cell.mine && !cell.flag) paint(j, 'mine');
+      else if (!cell.mine && cell.flag) paint(j, 'wrong');   // спір був даремний
+    });
+    paint(i, 'boom');
+    updateStats();
+    showBanner('lose', 'Ви наклались на сусіда. Справа передана в суд',
+      `Строк розгляду: ${fmt(Math.round(elapsed / 1000))}`, 'Подати нову заяву');
+  }
+
+  // ---------- таймер ----------
+  function startTimer() {
+    startedAt = performance.now();
+    timerId = setInterval(() => { elapsed = performance.now() - startedAt; updateStats(); }, 250);
+  }
+  function stopTimer() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    if (startedAt !== null) elapsed = performance.now() - startedAt;
+  }
+  function fmt(s) {
+    s = Math.min(s, 99 * 60 + 59);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  // ---------- малювання ----------
+  function buildBoard() {
+    boardEl.innerHTML = '';
+    boardEl.style.gridTemplateColumns = `repeat(${cols}, var(--c))`;
+    cellEls = cells.map((_, i) => {
+      const el = document.createElement('div');
+      el.className = 'cell'; el.dataset.i = i; el.setAttribute('role', 'gridcell');
+      boardEl.appendChild(el);
+      return el;
+    });
+    fit();
+  }
+
+  function paint(i, end) {
+    const cell = cells[i], el = cellEls[i];
+    let cls = 'cell';
+    if (end) cls += end === 'boom' ? ' open mine boom' : ' open ' + end;
+    else if (cell.open) cls += ' open';
+    else if (cell.flag) cls += ' flag';
+    el.className = cls;
+    if (cell.open && !end && cell.n) { el.textContent = cell.n; el.dataset.n = cell.n; }
+    else { el.textContent = ''; delete el.dataset.n; }
+  }
+
+  function fit() {
+    const w = wrap.clientWidth - 6;
+    const c = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.floor((w - (cols - 1) * 2) / cols)));
+    boardEl.style.setProperty('--c', c + 'px');
+  }
+
+  function renderLevels() {
+    const box = $('levels');
+    box.innerHTML = '';
+    for (const [key, L] of Object.entries(LEVELS)) {
+      const b = document.createElement('button');
+      b.setAttribute('aria-pressed', String(key === levelKey));
+      const best = bestOf(key);
+      b.innerHTML = `<b>${L.title}</b><small>${L.rows}×${L.cols} · ${L.mines}${best ? ' · ' + fmt(best) : ''}</small>`;
+      b.addEventListener('click', () => newGame(key));
+      box.appendChild(b);
+    }
+  }
+
+  function updateStats() {
+    $('left').textContent = mines - flags;
+    $('timer').textContent = fmt(Math.floor(elapsed / 1000));
+    const best = bestOf(levelKey);
+    $('best').textContent = best ? fmt(best) : '—';
+  }
+
+  function showBanner(kind, title, sub, again) {
+    $('bannerMsg').innerHTML = '';
+    const b = document.createElement('b'); b.textContent = title;
+    const s = document.createElement('small'); s.textContent = sub;
+    $('bannerMsg').append(b, s);
+    $('againBtn').textContent = again;
+    $('shareBtn').style.display = window.TelegramGameProxy ? '' : 'none';
+    $('banner').className = 'show ' + kind;
+    renderLevels();
+  }
+
+  // ---------- натискання ----------
+  // Короткий тап — перевірити (або спір у режимі ⚑), довге — спір.
+  // Палець поїхав — це прокрутка поля, нічого не робимо.
+  let press = null;
+  const cellIndex = (e) => {
+    const el = e.target.closest && e.target.closest('.cell');
+    return el ? Number(el.dataset.i) : -1;
+  };
+  function cancelPress() {
+    if (!press) return;
+    clearTimeout(press.timer);
+    if (cellEls[press.i]) cellEls[press.i].classList.remove('pressed');
+    press = null;
+  }
+
+  boardEl.addEventListener('pointerdown', (e) => {
+    const i = cellIndex(e);
+    if (i < 0 || !e.isPrimary) return;
+    cancelPress();
+    if (e.button === 2) { toggleFlag(i); return; }   // права кнопка миші
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    press = { i, x: e.clientX, y: e.clientY, long: false };
+    if (!cells[i].open) cellEls[i].classList.add('pressed');
+    press.timer = setTimeout(() => {
+      if (!press) return;
+      press.long = true;
+      cellEls[press.i].classList.remove('pressed');
+      if (toggleFlag(press.i)) { try { navigator.vibrate && navigator.vibrate(15); } catch (err) { /* нема вібро */ } }
+    }, LONG_PRESS);
+  });
+  boardEl.addEventListener('pointermove', (e) => {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > MOVE_CANCEL) cancelPress();
+  });
+  boardEl.addEventListener('pointerup', () => {
+    if (!press) return;
+    const { i, long } = press;
+    cancelPress();
+    if (long) return;
+    if (flagMode && !cells[i].open) toggleFlag(i); else open(i);
+  });
+  boardEl.addEventListener('pointercancel', cancelPress);   // браузер забрав жест на прокрутку
+  boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  $('modeBtn').addEventListener('click', () => {
+    flagMode = !flagMode;
+    $('modeBtn').setAttribute('aria-pressed', String(flagMode));
+    $('modeBtn').textContent = flagMode ? '⚑ Спір' : '⛏ Перевірка';
+  });
+  $('newBtn').addEventListener('click', () => newGame());
+  $('againBtn').addEventListener('click', () => newGame());
+  $('shareBtn').addEventListener('click', () => {
+    try { window.TelegramGameProxy.shareScore(); } catch (e) { /* поза Telegram */ }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') $('modeBtn').click();
+    if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') newGame();
+  });
+  window.addEventListener('resize', fit);
+
+  newGame();
+})();
+</script>
+</body>
+</html>
