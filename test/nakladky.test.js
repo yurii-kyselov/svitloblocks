@@ -40,6 +40,7 @@ function mk(tag = 'div') {
       add(c) { const s = new Set(el.className.split(' ').filter(Boolean)); s.add(c); el.className = [...s].join(' '); },
       remove(c) { el.className = el.className.split(' ').filter((x) => x && x !== c).join(' '); },
       contains(c) { return el.className.split(' ').includes(c); },
+      toggle(c, on) { if (on) el.classList.add(c); else el.classList.remove(c); },
     },
     setAttribute(k, v) { el[k] = v; }, getAttribute(k) { return el[k]; },
     addEventListener(t, f) { L[t] = f; },
@@ -48,7 +49,8 @@ function mk(tag = 'div') {
     closest(sel) { return sel === '.cell' && el.classList.contains('cell') ? el : null; },
     click() { L.click && L.click(); },
   };
-  Object.defineProperty(el, 'innerHTML', { get: () => '', set: () => { el.children = []; } });
+  let markup = '';
+  Object.defineProperty(el, 'innerHTML', { get: () => markup, set: (v) => { markup = v; el.children = []; } });
   return el;
 }
 const els = {};
@@ -70,27 +72,69 @@ if (!script.includes(anchor)) throw new Error('не знайшов точку с
 eval(script.replace(anchor, `  newGame();
   window.__t = { open, chord, toggleFlag, newGame, neighbors,
     get cells() { return cells; }, get state() { return state; }, get rows() { return rows; },
-    get cols() { return cols; }, get flags() { return flags; } };
+    get cols() { return cols; }, get flags() { return flags; }, get cellSize() { return cellSize; } };
 })();`));
 const T = window.__t;
 const board = els.board;
 const banner = () => els.banner.className;
 const bannerText = () => els.bannerMsg.children.map((c) => c.textContent).join(' / ');
 
-// ---------- 1. перший хід безпечний ----------
-let safe = true;
-for (const lvl of ['pai', 'masyv', 'kadastr']) {
-  for (let k = 0; k < 60; k++) {
-    T.newGame(lvl);
-    const first = Math.floor(Math.random() * T.cells.length);
-    T.open(first);
-    const zone = [first, ...T.neighbors(first)];
-    if (zone.some((i) => T.cells[i].mine) || T.state === 'lost') safe = false;
-    const total = T.cells.filter((c) => c.mine).length;
-    if (total !== { pai: 10, masyv: 40, kadastr: 99 }[lvl]) safe = false;
+// ---------- 1. інваріанти поля: 200 випадкових полів кожного рівня ----------
+// Рахуємо сусідів незалежно від гри — через (рядок, стовпець) і явні межі,
+// щоб помилка «сусід у стовпці 0 береться з кінця попереднього рядка» не сховалась
+const LEVELS = { pai: [9, 9, 10], masyv: [16, 16, 40], kadastr: [30, 16, 99] }; // стовпці, рядки, накладки
+const BOARDS = 200;
+function around(r, c, rows, cols) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      if ((dr || dc) && rr >= 0 && rr < rows && cc >= 0 && cc < cols) out.push([rr, cc]);
+    }
   }
+  return out;
 }
-check('перший хід і його сусіди ніколи не накладки (180 партій)', safe);
+for (const [lvl, [cols, rows, mines]] of Object.entries(LEVELS)) {
+  const errors = { size: 0, mines: 0, numbers: 0, first: 0 };
+  // кути й краї — окремо, решта — випадкові клітинки
+  const special = [[0, 0], [0, cols - 1], [rows - 1, 0], [rows - 1, cols - 1], [0, 4], [rows - 1, 4], [5, 0], [5, cols - 1]];
+  for (let k = 0; k < BOARDS; k++) {
+    T.newGame(lvl);
+    if (T.cols !== cols || T.rows !== rows || T.cells.length !== cols * rows) errors.size++;
+    const [fr, fc] = k < special.length ? special[k]
+      : [Math.floor(Math.random() * rows), Math.floor(Math.random() * cols)];
+    T.open(fr * cols + fc);
+    const at = (r, c) => T.cells[r * cols + c];
+    if (T.cells.filter((c) => c.mine).length !== mines) errors.mines++;
+    if (T.state === 'lost' || at(fr, fc).mine || around(fr, fc, rows, cols).some(([r, c]) => at(r, c).mine)) errors.first++;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (at(r, c).mine) continue;
+        const n = around(r, c, rows, cols).filter(([rr, cc]) => at(rr, cc).mine).length;
+        if (at(r, c).n !== n) errors.numbers++;
+      }
+    }
+  }
+  const ok = Object.values(errors).every((v) => !v);
+  check(`${lvl}: ${cols}×${rows}, ${mines} накладок, цифри й перший хід на ${BOARDS} полях`, ok, ok ? '' : JSON.stringify(errors));
+}
+
+// Сусіди за версією гри: на краях не «загортаються» в сусідній рядок
+T.newGame('kadastr');
+const C = T.cols, R = T.rows;
+const asRC = (i) => [Math.floor(i / C), i % C];
+const wrapErrors = [];
+for (const [r, c] of [[0, 0], [5, 0], [5, C - 1], [R - 1, 0], [R - 1, C - 1], [0, C - 1]]) {
+  const got = T.neighbors(r * C + c).map(asRC);
+  const bad = got.filter(([rr, cc]) => Math.abs(rr - r) > 1 || Math.abs(cc - c) > 1);
+  if (bad.length || got.length !== around(r, c, R, C).length) wrapErrors.push(`${r},${c}`);
+}
+check('сусіди на кутах і краях не беруться з іншого рядка', !wrapErrors.length, wrapErrors.join(' '));
+
+// Підписи рівнів точно як поле: стовпці × рядки
+const labels = els.levels.children.map((b) => b.innerHTML);
+check('підписи рівнів збігаються з розмірами', labels[0].includes('9×9 · 10') && labels[1].includes('16×16 · 40') &&
+  labels[2].includes('30×16 · 99'), labels.map((l) => l.replace(/<[^>]+>/g, ' ')).join(' | '));
 check('перший хід — порожня зона розкривається сама', (() => {
   T.newGame('pai'); T.open(40); return T.cells.filter((c) => c.open).length > 1;
 })());
@@ -183,8 +227,20 @@ try {
 } catch (e) { crashed = true; }
 check('без localStorage гра доходить до перемоги', !crashed && T.state === 'won');
 
-// ---------- 7. Кадастр на вузькому екрані стоїть вертикально ----------
-T.newGame('kadastr');
-check('Кадастр на телефоні — 30 рядків × 16 стовпців', T.rows === 30 && T.cols === 16, `${T.rows}×${T.cols}`);
+// ---------- 7. розмір поля не залежить від екрана ----------
+for (const [w, h] of [[328, 480], [600, 300], [1200, 800]]) {
+  els.wrap.clientWidth = w; els.wrap.clientHeight = h;
+  T.newGame('kadastr');
+  check(`Кадастр на екрані ${w}×${h} — 30 стовпців × 16 рядків`, T.cols === 30 && T.rows === 16, `${T.cols}×${T.rows}`);
+}
+// На телефоні клітинки не дрібніші за 22 px; що не влазить — гортається в рамці
+els.wrap.clientWidth = 328;
+for (const lvl of ['pai', 'masyv', 'kadastr']) {
+  T.newGame(lvl);
+  const width = T.cols * T.cellSize + (T.cols - 1) * 2 + 4;
+  const hint = els.scrollHint.classList.contains('show');
+  check(`${lvl} на 360 px: клітинка ${T.cellSize} px, підказка про прокрутку ${hint ? 'є' : 'нема'}`,
+    T.cellSize >= 22 && T.cellSize <= 40 && hint === width > 328 && els.wrap.classList.contains('wide') === hint);
+}
 
 process.exit(failures ? 1 : 0);

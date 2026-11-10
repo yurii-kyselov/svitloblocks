@@ -66,7 +66,15 @@
     background: var(--accent); color: #1e1705; cursor: pointer; touch-action: manipulation; white-space: nowrap;
   }
   .cta.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
-  #wrap { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; }
+  #wrap {
+    flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; border-radius: 10px;
+  }
+  #wrap.wide { padding-bottom: 6px; }
+  #wrap::-webkit-scrollbar { height: 6px; width: 6px; }
+  #wrap::-webkit-scrollbar-thumb { background: #3a4552; border-radius: 3px; }
+  #scrollHint { display: none; text-align: center; font-size: 11.5px; color: var(--accent); margin: -2px 0 -4px; }
+  #scrollHint.show { display: block; }
   #board {
     --c: 32px; display: grid; gap: 2px; margin: 0 auto; width: max-content; padding: 2px;
     background: var(--line); border-radius: 8px;
@@ -129,6 +137,7 @@
   </div>
 </div>
 
+<div id="scrollHint">⟷ Поле ширше за екран — гортай його вбік</div>
 <div id="wrap"><div id="board" role="grid" aria-label="Поле ділянок"></div></div>
 
 <footer>
@@ -148,7 +157,7 @@
   };
   const LONG_PRESS = 400;   // мс — спір
   const MOVE_CANCEL = 10;   // px — далі це вже прокрутка, а не натискання
-  const MIN_CELL = 26, MAX_CELL = 40;
+  const MIN_CELL = 22, MAX_CELL = 40, GAP = 2, BOARD_PAD = 2;
   const BEST_KEY = 'nakladky.best.';
   const LEVEL_KEY = 'nakladky.level';
 
@@ -163,7 +172,8 @@
   // ---------- стан ----------
   let levelKey = LEVELS[load(LEVEL_KEY)] ? load(LEVEL_KEY) : 'pai';
   let rows, cols, mines, cells, cellEls, state, flags, opened, startedAt, elapsed, timerId, flagMode = false;
-  // cells[i] = { mine, n, open, flag }
+  let cellSize = 0;
+  // cells[i] = { mine, n, open, flag }; клітинка (r, c) лежить у cells[r * cols + c]
 
   const idx = (r, c) => r * cols + c;
   function neighbors(i) {
@@ -182,9 +192,8 @@
     $('banner').className = '';
     if (key) { levelKey = key; save(LEVEL_KEY, key); }
     const L = LEVELS[levelKey];
+    // Розмір поля — лише з рівня, ніколи з екрана: під екран підганяються клітинки
     rows = L.rows; cols = L.cols; mines = L.mines;
-    // На вузькому вертикальному екрані довге поле ставимо «стоячи»
-    if (cols > rows && wrap.clientWidth < wrap.clientHeight) [rows, cols] = [cols, rows];
     cells = Array.from({ length: rows * cols }, () => ({ mine: false, n: 0, open: false, flag: false }));
     state = 'ready'; flags = 0; opened = 0; elapsed = 0; startedAt = null;
     stopTimer();
@@ -312,10 +321,17 @@
     else { el.textContent = ''; delete el.dataset.n; }
   }
 
+  // Клітинки зменшуються до MIN_CELL; не влазить і так — поле гортається вбік
+  // у своїй рамці, а сторінка, кнопки й лічильники стоять на місці
+  const boardWidth = (c) => cols * c + (cols - 1) * GAP + 2 * BOARD_PAD;
   function fit() {
-    const w = wrap.clientWidth - 6;
-    const c = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.floor((w - (cols - 1) * 2) / cols)));
+    const w = wrap.clientWidth;
+    const c = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.floor((w - (cols - 1) * GAP - 2 * BOARD_PAD) / cols)));
     boardEl.style.setProperty('--c', c + 'px');
+    cellSize = c;
+    const wide = boardWidth(c) > w;
+    $('scrollHint').classList.toggle('show', wide);
+    wrap.classList.toggle('wide', wide);
   }
 
   function renderLevels() {
@@ -325,7 +341,9 @@
       const b = document.createElement('button');
       b.setAttribute('aria-pressed', String(key === levelKey));
       const best = bestOf(key);
-      b.innerHTML = `<b>${L.title}</b><small>${L.rows}×${L.cols} · ${L.mines}${best ? ' · ' + fmt(best) : ''}</small>`;
+      // стовпці × рядки — так само, як малюється поле
+      b.title = `${L.cols} стовпців × ${L.rows} рядків, ${L.mines} накладок`;
+      b.innerHTML = `<b>${L.title}</b><small>${L.cols}×${L.rows} · ${L.mines}${best ? ' · ' + fmt(best) : ''}</small>`;
       b.addEventListener('click', () => newGame(key));
       box.appendChild(b);
     }
